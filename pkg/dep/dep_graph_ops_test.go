@@ -4,10 +4,12 @@
 package dep
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Jguer/aur"
 	"github.com/Jguer/dyalpm"
@@ -18,6 +20,7 @@ import (
 	"github.com/Jguer/yay/v12/pkg/db/mock"
 	mockaur "github.com/Jguer/yay/v12/pkg/dep/mock"
 	"github.com/Jguer/yay/v12/pkg/query"
+	"github.com/Jguer/yay/v12/pkg/settings"
 	"github.com/Jguer/yay/v12/pkg/text"
 )
 
@@ -39,7 +42,7 @@ func TestGrapher_GraphFromTargetsBranches(t *testing.T) {
 		},
 	}
 
-	grapher := NewGrapher(dbExecutor, &mockaur.MockAUR{}, false, false, false, false, false, logger)
+	grapher := NewGrapher(dbExecutor, &mockaur.MockAUR{}, false, false, false, false, false, 0, logger)
 	graph, err := grapher.GraphFromTargets(context.Background(), nil, []string{"core/repo-pkg"})
 	require.NoError(t, err)
 	require.True(t, graph.Exists("repo-pkg"))
@@ -63,7 +66,7 @@ func TestGrapher_GraphFromTargetsFallbackToGroup(t *testing.T) {
 		},
 	}
 
-	grapher := NewGrapher(dbExecutor, &mockaur.MockAUR{}, false, false, false, false, false, logger)
+	grapher := NewGrapher(dbExecutor, &mockaur.MockAUR{}, false, false, false, false, false, 0, logger)
 	graph, err := grapher.GraphFromTargets(context.Background(), nil, []string{"grouped"})
 	require.NoError(t, err)
 	require.True(t, graph.Exists("grouped"))
@@ -84,7 +87,7 @@ func TestGrapher_GraphFromTargetsFallbackToAur(t *testing.T) {
 		GetFn: func(ctx context.Context, query *aur.Query) ([]aur.Pkg, error) {
 			return []aur.Pkg{{Name: "aur-target", Version: "1"}}, nil
 		},
-	}, false, false, false, false, false, logger)
+	}, false, false, false, false, false, 0, logger)
 
 	graph, err := grapher.GraphFromTargets(context.Background(), nil, []string{"aur-target"})
 	require.NoError(t, err)
@@ -112,7 +115,7 @@ func TestGrapher_GraphFromAURNeededSkipsUpToDate(t *testing.T) {
 				Version: "1",
 			}}, nil
 		},
-	}, false, false, false, false, true, logger)
+	}, false, false, false, false, true, 0, logger)
 
 	graph, err := grapher.GraphFromAUR(context.Background(), nil, []string{"needless"})
 	require.NoError(t, err)
@@ -127,7 +130,7 @@ func TestGrapher_GraphFromAURNotFoundReturnsErr(t *testing.T) {
 		GetFn: func(ctx context.Context, query *aur.Query) ([]aur.Pkg, error) {
 			return nil, nil
 		},
-	}, false, false, false, false, false, logger)
+	}, false, false, false, false, false, 0, logger)
 
 	graph, err := grapher.GraphFromAUR(context.Background(), nil, []string{"ghost"})
 	var targetNotFound *query.ErrTargetNotFound
@@ -147,7 +150,7 @@ func TestGrapher_GraphFromSrcInfosSinglePkg(t *testing.T) {
 		},
 	}
 
-	grapher := NewGrapher(dbExecutor, &mockaur.MockAUR{}, false, false, false, false, false, logger)
+	grapher := NewGrapher(dbExecutor, &mockaur.MockAUR{}, false, false, false, false, false, 0, logger)
 	graph, err := grapher.GraphFromSrcInfos(context.Background(), nil, map[string]*gosrc.Srcinfo{
 		"foo": {
 			PackageBase: gosrc.PackageBase{
@@ -189,7 +192,7 @@ func TestGrapher_FindDepsFromAURSatisfiesMissingAndErrorPaths(t *testing.T) {
 				},
 			}, nil
 		},
-	}, false, false, false, false, false, logger)
+	}, false, false, false, false, false, 0, logger)
 
 	graph := NewGraph()
 	graph.AddNode("root")
@@ -197,4 +200,72 @@ func TestGrapher_FindDepsFromAURSatisfiesMissingAndErrorPaths(t *testing.T) {
 	deps := mapset.NewThreadUnsafeSet("dep-lib")
 	found := grapher.findDepsFromAUR(context.Background(), graph, "root", deps)
 	require.Len(t, found, 1)
+}
+
+func TestConfirmTooNewPkgs(t *testing.T) {
+	t.Parallel()
+
+	recentPkg := aur.Pkg{
+		Name:         "new-pkg",
+		PackageBase:  "new-pkg",
+		Version:      "1.0",
+		LastModified: int(time.Now().Add(-1 * time.Hour).Unix()),
+	}
+
+	mockDB := &mock.DBExecutor{
+		LocalPackageFn: func(string) mock.IPackage { return nil },
+	}
+	mockAUR := &mockaur.MockAUR{
+		GetFn: func(_ context.Context, q *aur.Query) ([]aur.Pkg, error) {
+			return []aur.Pkg{recentPkg}, nil
+		},
+	}
+
+	t.Run("no-op when no packages collected", func(t *testing.T) {
+		t.Parallel()
+
+		logger := text.NewLogger(io.Discard, io.Discard, strings.NewReader(""), true, "test")
+		grapher := NewGrapher(mockDB, mockAUR, false, false, false, false, false, 0, logger)
+		require.NoError(t, grapher.ConfirmTooNewPkgs())
+	})
+
+	t.Run("warns and proceeds when user confirms", func(t *testing.T) {
+		t.Parallel()
+
+		var stdout bytes.Buffer
+		logger := text.NewLogger(&stdout, io.Discard, strings.NewReader("y\n"), false, "test")
+		grapher := NewGrapher(mockDB, mockAUR, false, false, false, false, false, 7*24*time.Hour, logger)
+
+		_, err := grapher.GraphFromAUR(context.Background(), nil, []string{"new-pkg"})
+		require.NoError(t, err)
+
+		require.NoError(t, grapher.ConfirmTooNewPkgs())
+		require.Contains(t, stdout.String(), "new-pkg")
+	})
+
+	t.Run("returns ErrUserAbort when user declines", func(t *testing.T) {
+		t.Parallel()
+
+		logger := text.NewLogger(io.Discard, io.Discard, strings.NewReader("n\n"), false, "test")
+		grapher := NewGrapher(mockDB, mockAUR, false, false, false, false, false, 7*24*time.Hour, logger)
+
+		_, err := grapher.GraphFromAUR(context.Background(), nil, []string{"new-pkg"})
+		require.NoError(t, err)
+
+		var abort *settings.ErrUserAbort
+		require.ErrorAs(t, grapher.ConfirmTooNewPkgs(), &abort)
+	})
+
+	t.Run("clears state after call so second call is no-op", func(t *testing.T) {
+		t.Parallel()
+
+		logger := text.NewLogger(io.Discard, io.Discard, strings.NewReader("y\n"), false, "test")
+		grapher := NewGrapher(mockDB, mockAUR, false, false, false, false, false, 7*24*time.Hour, logger)
+
+		_, err := grapher.GraphFromAUR(context.Background(), nil, []string{"new-pkg"})
+		require.NoError(t, err)
+
+		require.NoError(t, grapher.ConfirmTooNewPkgs())
+		require.NoError(t, grapher.ConfirmTooNewPkgs())
+	})
 }

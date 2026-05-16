@@ -33,7 +33,8 @@ type UpgradeService struct {
 	log        *text.Logger
 	noConfirm  bool
 
-	AURWarnings *query.AURWarnings
+	AURWarnings    *query.AURWarnings
+	TooNewUpgrades UpSlice
 }
 
 func NewUpgradeService(grapher *dep.Grapher, aurCache aur.QueryClient,
@@ -41,14 +42,15 @@ func NewUpgradeService(grapher *dep.Grapher, aurCache aur.QueryClient,
 	cfg *settings.Configuration, noConfirm bool, logger *text.Logger,
 ) *UpgradeService {
 	return &UpgradeService{
-		grapher:     grapher,
-		aurCache:    aurCache,
-		dbExecutor:  dbExecutor,
-		vcsStore:    vcsStore,
-		cfg:         cfg,
-		noConfirm:   noConfirm,
-		log:         logger,
-		AURWarnings: query.NewWarnings(logger.Child("warnings")),
+		grapher:        grapher,
+		aurCache:       aurCache,
+		dbExecutor:     dbExecutor,
+		vcsStore:       vcsStore,
+		cfg:            cfg,
+		noConfirm:      noConfirm,
+		log:            logger,
+		AURWarnings:    query.NewWarnings(logger.Child("warnings")),
+		TooNewUpgrades: UpSlice{Up: make([]Upgrade, 0), Repos: []string{"aur"}},
 	}
 }
 
@@ -83,7 +85,14 @@ func (u *UpgradeService) upGraph(ctx context.Context, graph *topo.Graph[string, 
 
 			u.AURWarnings.CalculateMissing(remoteNames, remote, aurdata)
 
-			aurUp = UpAUR(u.log, remote, aurdata, enableDowngrade)
+			minAge, ageErr := text.ParseDuration(u.cfg.MinReleaseAge)
+			if ageErr != nil {
+				return fmt.Errorf("minreleaseage: %w", ageErr)
+			}
+
+			var tooNew UpSlice
+			aurUp, tooNew = UpAUR(u.log, remote, aurdata, enableDowngrade, minAge)
+			u.TooNewUpgrades.Up = append(u.TooNewUpgrades.Up, tooNew.Up...)
 
 			if u.cfg.Devel {
 				u.log.OperationInfoln(gotext.Get("Checking development packages..."))
@@ -247,6 +256,34 @@ func (u *UpgradeService) GraphUpgrades(ctx context.Context,
 	}
 
 	return graph, nil
+}
+
+// PrintTooNew prints a grouped summary of upgrades held back by minreleaseage,
+// sorted by name, with a dependency-breakage warning.
+func (u *UpgradeService) PrintTooNew() {
+	if len(u.TooNewUpgrades.Up) == 0 {
+		return
+	}
+
+	minAge, _ := text.ParseDuration(u.cfg.MinReleaseAge)
+
+	u.log.Warnln(gotext.Get("AUR upgrades held back (modified less than %s ago):",
+		text.FormatDuration(minAge)))
+
+	ups := make([]Upgrade, len(u.TooNewUpgrades.Up))
+	copy(ups, u.TooNewUpgrades.Up)
+	sort.Slice(ups, func(i, j int) bool { return ups[i].Name < ups[j].Name })
+
+	for i := range ups {
+		up := &ups[i]
+		u.log.Println(fmt.Sprintf("  %s  %s -> %s  (%s)",
+			text.Bold(text.Cyan(up.Name)),
+			text.Bold(text.Green(up.LocalVersion)),
+			text.Bold(text.Green(up.RemoteVersion)),
+			up.Extra+gotext.Get(" ago")))
+	}
+
+	u.log.Warnln(gotext.Get("Holding back upgrades may cause partial upgrades and break systems"))
 }
 
 // userExcludeUpgrades asks the user which packages to exclude from the upgrade and

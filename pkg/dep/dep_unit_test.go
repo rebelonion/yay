@@ -116,7 +116,7 @@ func TestGrapher_GraphSyncPkgAndUpgrade(t *testing.T) {
 		},
 	}
 
-	grapher := NewGrapher(mockDb, &mockaur.MockAUR{}, false, false, false, false, false, logger)
+	grapher := NewGrapher(mockDb, &mockaur.MockAUR{}, false, false, false, false, false, 0, logger)
 	graph := grapher.GraphSyncPkg(context.TODO(), nil, &mock.Package{
 		PName:    "yay",
 		PVersion: "1.2.0",
@@ -150,7 +150,7 @@ func TestGrapher_GraphSyncPkgAndUpgrade(t *testing.T) {
 func TestGrapher_GraphSyncGroupAndValidateNodeInfo(t *testing.T) {
 	t.Parallel()
 
-	grapher := NewGrapher(&mock.DBExecutor{}, &mockaur.MockAUR{}, false, false, false, false, false, text.NewLogger(io.Discard, io.Discard, strings.NewReader(""), true, "test"))
+	grapher := NewGrapher(&mock.DBExecutor{}, &mockaur.MockAUR{}, false, false, false, false, false, 0, text.NewLogger(io.Discard, io.Discard, strings.NewReader(""), true, "test"))
 
 	graph := grapher.GraphSyncGroup(context.TODO(), nil, "editors", "community")
 	groupInfo := graph.GetNodeInfo("editors").Value
@@ -171,7 +171,7 @@ func TestGrapher_GraphSyncGroupAndValidateNodeInfo(t *testing.T) {
 func TestProvideMenuAndMakeAURPKGFromSrcinfo(t *testing.T) {
 	t.Parallel()
 
-	grapher := NewGrapher(&mock.DBExecutor{}, &mockaur.MockAUR{}, false, true, false, false, false, text.NewLogger(io.Discard, io.Discard, strings.NewReader(""), true, "test"))
+	grapher := NewGrapher(&mock.DBExecutor{}, &mockaur.MockAUR{}, false, true, false, false, false, 0, text.NewLogger(io.Discard, io.Discard, strings.NewReader(""), true, "test"))
 	opts := []aur.Pkg{
 		{Name: "aur-pkg-one", Version: "1"},
 		{Name: "aur-pkg-two", Version: "2"},
@@ -179,7 +179,7 @@ func TestProvideMenuAndMakeAURPKGFromSrcinfo(t *testing.T) {
 
 	require.Equal(t, "aur-pkg-one", grapher.provideMenu("dep", opts).Name)
 
-	grapherNoConfirm := NewGrapher(&mock.DBExecutor{}, &mockaur.MockAUR{}, false, false, false, false, false,
+	grapherNoConfirm := NewGrapher(&mock.DBExecutor{}, &mockaur.MockAUR{}, false, false, false, false, false, 0,
 		text.NewLogger(io.Discard, io.Discard, strings.NewReader("2\n"), false, "test"))
 	require.Equal(t, "aur-pkg-two", grapherNoConfirm.provideMenu("dep", opts).Name)
 }

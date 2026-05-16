@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	aur "github.com/Jguer/aur"
 	"github.com/stretchr/testify/assert"
@@ -27,11 +28,13 @@ func Test_upAUR(t *testing.T) {
 		remote          map[string]alpm.Package
 		aurdata         map[string]*aur.Pkg
 		enableDowngrade bool
+		minAge          time.Duration
 	}
 	tests := []struct {
-		name string
-		args args
-		want UpSlice
+		name           string
+		args           args
+		want           UpSlice
+		wantTooNewLen  int
 	}{
 		{
 			name: "No Updates",
@@ -112,16 +115,49 @@ func Test_upAUR(t *testing.T) {
 			},
 			want: UpSlice{Repos: []string{"aur"}, Up: []Upgrade{}},
 		},
+		{
+			name: "Skip Package Too New For MinReleaseAge",
+			args: args{
+				remote:  map[string]alpm.Package{"hello": &mock.Package{PName: "hello", PVersion: "2.0.0"}},
+				aurdata: map[string]*aur.Pkg{"hello": {Version: "2.1.0", Name: "hello", LastModified: int(time.Now().Add(-1 * time.Hour).Unix())}},
+				minAge:  24 * time.Hour,
+			},
+			want:          UpSlice{Repos: []string{"aur"}, Up: []Upgrade{}},
+			wantTooNewLen: 1,
+		},
+		{
+			name: "Allow Package Old Enough For MinReleaseAge",
+			args: args{
+				remote:  map[string]alpm.Package{"hello": &mock.Package{PName: "hello", PVersion: "2.0.0"}},
+				aurdata: map[string]*aur.Pkg{"hello": {Version: "2.1.0", Name: "hello", LastModified: int(time.Now().Add(-48 * time.Hour).Unix())}},
+				minAge:  24 * time.Hour,
+			},
+			want: UpSlice{Repos: []string{"aur"}, Up: []Upgrade{
+				{Name: "hello", Repository: "aur", LocalVersion: "2.0.0", RemoteVersion: "2.1.0"},
+			}},
+		},
+		{
+			name: "MinAge Zero Disables Filter",
+			args: args{
+				remote:  map[string]alpm.Package{"hello": &mock.Package{PName: "hello", PVersion: "2.0.0"}},
+				aurdata: map[string]*aur.Pkg{"hello": {Version: "2.1.0", Name: "hello", LastModified: int(time.Now().Unix())}},
+				minAge:  0,
+			},
+			want: UpSlice{Repos: []string{"aur"}, Up: []Upgrade{
+				{Name: "hello", Repository: "aur", LocalVersion: "2.0.0", RemoteVersion: "2.1.0"},
+			}},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			got := UpAUR(text.NewLogger(io.Discard, os.Stderr, strings.NewReader(""), false, "test"),
-				tt.args.remote, tt.args.aurdata, tt.args.enableDowngrade)
+			got, tooNew := UpAUR(text.NewLogger(io.Discard, os.Stderr, strings.NewReader(""), false, "test"),
+				tt.args.remote, tt.args.aurdata, tt.args.enableDowngrade, tt.args.minAge)
 			assert.ElementsMatch(t, tt.want.Repos, got.Repos)
 			assert.ElementsMatch(t, tt.want.Up, got.Up)
 			assert.Equal(t, tt.want.Len(), got.Len())
+			assert.Len(t, tooNew.Up, tt.wantTooNewLen)
 		})
 	}
 }

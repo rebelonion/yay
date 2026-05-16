@@ -25,7 +25,7 @@ func TestGraphPackageRequiresSingleTarget(t *testing.T) {
 	t.Parallel()
 
 	logger := text.NewLogger(io.Discard, io.Discard, strings.NewReader(""), true, "test")
-	grapher := dep.NewGrapher(&mock.DBExecutor{}, &mockaur.MockAUR{}, false, false, false, false, false, logger)
+	grapher := dep.NewGrapher(&mock.DBExecutor{}, &mockaur.MockAUR{}, false, false, false, false, false, 0, logger)
 	err := graphPackage(context.Background(), grapher, []string{"one", "two"})
 	require.Error(t, err)
 }
@@ -46,7 +46,7 @@ func TestGraphPackage(t *testing.T) {
 				},
 			}, nil
 		},
-	}, false, false, false, false, false, logger)
+	}, false, false, false, false, false, 0, logger)
 
 	output := captureStdout(t, func() {
 		err := graphPackage(context.Background(), grapher, []string{"target"})

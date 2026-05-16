@@ -2,6 +2,7 @@ package upgrade
 
 import (
 	"context"
+	"time"
 
 	"github.com/leonelquinteros/gotext"
 
@@ -61,11 +62,12 @@ func printIgnoringPackage(log *text.Logger, pkg db.IPackage, newPkgVersion strin
 }
 
 // UpAUR gathers foreign packages and checks if they have new versions.
-// Output: Upgrade type package list.
+// Output: Upgrade type package list. tooNew contains packages skipped due to minAge.
 func UpAUR(log *text.Logger, remote map[string]db.IPackage, aurdata map[string]*query.Pkg,
-	enableDowngrade bool,
-) UpSlice {
-	toUpgrade := UpSlice{Up: make([]Upgrade, 0), Repos: []string{"aur"}}
+	enableDowngrade bool, minAge time.Duration,
+) (toUpgrade, tooNew UpSlice) {
+	toUpgrade = UpSlice{Up: make([]Upgrade, 0), Repos: []string{"aur"}}
+	tooNew = UpSlice{Up: make([]Upgrade, 0), Repos: []string{"aur"}}
 
 	for name, pkg := range remote {
 		aurPkg, ok := aurdata[name]
@@ -77,19 +79,37 @@ func UpAUR(log *text.Logger, remote map[string]db.IPackage, aurdata map[string]*
 			(enableDowngrade && (db.VerCmp(pkg.Version(), aurPkg.Version) > 0)) {
 			if pkg.ShouldIgnore() {
 				printIgnoringPackage(log, pkg, aurPkg.Version)
-			} else {
-				toUpgrade.Up = append(toUpgrade.Up,
-					Upgrade{
+				continue
+			}
+
+			if minAge > 0 {
+				age := time.Since(time.Unix(int64(aurPkg.LastModified), 0))
+				if age < minAge {
+					tooNew.Up = append(tooNew.Up, Upgrade{
 						Name:          aurPkg.Name,
 						Base:          aurPkg.PackageBase,
 						Repository:    "aur",
 						LocalVersion:  pkg.Version(),
 						RemoteVersion: aurPkg.Version,
 						Reason:        pkg.Reason(),
+						Extra:         text.FormatDuration(age),
 					})
+
+					continue
+				}
 			}
+
+			toUpgrade.Up = append(toUpgrade.Up,
+				Upgrade{
+					Name:          aurPkg.Name,
+					Base:          aurPkg.PackageBase,
+					Repository:    "aur",
+					LocalVersion:  pkg.Version(),
+					RemoteVersion: aurPkg.Version,
+					Reason:        pkg.Reason(),
+				})
 		}
 	}
 
-	return toUpgrade
+	return toUpgrade, tooNew
 }

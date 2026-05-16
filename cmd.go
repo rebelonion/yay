@@ -80,6 +80,7 @@ Permanent configuration options:
     --completioninterval  <n> Time in days to refresh completion cache
     --sortby    <field>   Sort AUR results by a specific field during search
     --searchby  <field>   Search for packages using a specified field
+    --minreleaseage <d>   Skip AUR packages modified more recently than this (1d, 12h, etc.)
     --answerclean   <a>   Set a predetermined answer for the clean build menu
     --answerdiff    <a>   Set a predetermined answer for the diff menu
     --answeredit    <a>   Set a predetermined answer for the edit pkgbuild menu

@@ -3,8 +3,10 @@ package dep
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	aurc "github.com/Jguer/aur"
 	alpm "github.com/Jguer/dyalpm"
@@ -16,6 +18,7 @@ import (
 	"github.com/Jguer/yay/v12/pkg/dep/topo"
 	"github.com/Jguer/yay/v12/pkg/intrange"
 	aur "github.com/Jguer/yay/v12/pkg/query"
+	"github.com/Jguer/yay/v12/pkg/settings"
 	"github.com/Jguer/yay/v12/pkg/text"
 )
 
@@ -94,21 +97,29 @@ var colorMap = map[Reason]string{
 	CheckDep: "forestgreen",
 }
 
+type tooNewPkg struct {
+	name string
+	age  time.Duration
+}
+
 type Grapher struct {
 	logger        *text.Logger
 	providerCache map[string][]aur.Pkg
+	tooNewPkgs    map[string]tooNewPkg // keyed by name; map deduplicates if same pkg appears as target and dep
 
-	dbExecutor  db.Executor
-	aurClient   aurc.QueryClient
-	fullGraph   bool // If true, the graph will include all dependencies including already installed ones or repo
-	noConfirm   bool // If true, the graph will not prompt for confirmation
-	noDeps      bool // If true, the graph will not include dependencies
-	noCheckDeps bool // If true, the graph will not include check dependencies
-	needed      bool // If true, the graph will only include packages that are not installed
+	dbExecutor    db.Executor
+	aurClient     aurc.QueryClient
+	fullGraph     bool          // If true, the graph will include all dependencies including already installed ones or repo
+	noConfirm     bool          // If true, the graph will not prompt for confirmation
+	noDeps        bool          // If true, the graph will not include dependencies
+	noCheckDeps   bool          // If true, the graph will not include check dependencies
+	needed        bool          // If true, the graph will only include packages that are not installed
+	minReleaseAge time.Duration // If > 0, collect packages modified more recently for a grouped confirmation
 }
 
 func NewGrapher(dbExecutor db.Executor, aurCache aurc.QueryClient,
 	fullGraph, noConfirm, noDeps, noCheckDeps, needed bool,
+	minReleaseAge time.Duration,
 	logger *text.Logger,
 ) *Grapher {
 	return &Grapher{
@@ -119,13 +130,47 @@ func NewGrapher(dbExecutor db.Executor, aurCache aurc.QueryClient,
 		noDeps:        noDeps,
 		noCheckDeps:   noCheckDeps,
 		needed:        needed,
+		minReleaseAge: minReleaseAge,
 		providerCache: make(map[string][]aurc.Pkg, 5),
+		tooNewPkgs:    make(map[string]tooNewPkg),
 		logger:        logger,
 	}
 }
 
 func NewGraph() *topo.Graph[string, *InstallInfo] {
 	return topo.New[string, *InstallInfo]()
+}
+
+// ConfirmTooNewPkgs shows a grouped warning for all packages collected as too new
+// (both explicit targets and AUR deps) and asks the user once whether to proceed.
+func (g *Grapher) ConfirmTooNewPkgs() error {
+	defer func() { g.tooNewPkgs = make(map[string]tooNewPkg) }()
+
+	if len(g.tooNewPkgs) == 0 {
+		return nil
+	}
+
+	g.logger.Warnln(gotext.Get("The following AUR packages were last modified less than %s ago:",
+		text.FormatDuration(g.minReleaseAge)))
+
+	pkgs := make([]tooNewPkg, 0, len(g.tooNewPkgs))
+	for _, p := range g.tooNewPkgs {
+		pkgs = append(pkgs, p)
+	}
+
+	sort.Slice(pkgs, func(i, j int) bool { return pkgs[i].name < pkgs[j].name })
+
+	for _, p := range pkgs {
+		g.logger.Println("  " + text.Cyan(p.name) + " (" + text.FormatDuration(p.age) + " ago)")
+	}
+
+	g.logger.Println()
+
+	if !g.logger.ContinueTask(gotext.Get("Proceed with installation?"), true, g.noConfirm) {
+		return &settings.ErrUserAbort{}
+	}
+
+	return nil
 }
 
 func (g *Grapher) GraphFromTargets(ctx context.Context,
@@ -463,6 +508,13 @@ func (g *Grapher) GraphFromAUR(ctx context.Context,
 			}
 		}
 
+		if g.minReleaseAge > 0 {
+			age := time.Since(time.Unix(int64(aurPkg.LastModified), 0))
+			if age < g.minReleaseAge {
+				g.tooNewPkgs[aurPkg.Name] = tooNewPkg{name: aurPkg.Name, age: age}
+			}
+		}
+
 		graph = g.GraphAURTarget(ctx, graph, aurPkg, &InstallInfo{
 			AURBase: &aurPkg.PackageBase,
 			Reason:  reason,
@@ -587,6 +639,13 @@ func (g *Grapher) findDepsFromAUR(ctx context.Context,
 		if len(aurPkgs) > 1 {
 			chosen := g.provideMenu(depString, aurPkgs)
 			pkg = *chosen
+		}
+
+		if g.minReleaseAge > 0 {
+			age := time.Since(time.Unix(int64(pkg.LastModified), 0))
+			if age < g.minReleaseAge {
+				g.tooNewPkgs[pkg.Name] = tooNewPkg{name: pkg.Name, age: age}
+			}
 		}
 
 		g.providerCache[depString] = []aurc.Pkg{pkg}

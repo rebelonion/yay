@@ -74,6 +74,7 @@ type Configuration struct {
 	Debug                  bool   `json:"debug" ini:"Debug"`
 	UseRPC                 bool   `json:"rpc" ini:"Rpc"`
 	DoubleConfirm          bool   `json:"doubleconfirm" ini:"DoubleConfirm"` // confirm install before and after build
+	MinReleaseAge          string `json:"minreleaseage" ini:"MinReleaseAge"`
 
 	CompletionPath string             `json:"-" ini:"-"`
 	VCSFilePath    string             `json:"-" ini:"-"`

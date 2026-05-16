@@ -15,6 +15,7 @@ import (
 	"github.com/Jguer/yay/v12/pkg/settings/exe"
 	"github.com/Jguer/yay/v12/pkg/settings/parser"
 	"github.com/Jguer/yay/v12/pkg/sync"
+	"github.com/Jguer/yay/v12/pkg/text"
 	"github.com/Jguer/yay/v12/pkg/upgrade"
 )
 
@@ -43,11 +44,21 @@ func syncInstall(ctx context.Context,
 		}
 	}
 
+	minReleaseAge, err := text.ParseDuration(run.Cfg.MinReleaseAge)
+	if err != nil {
+		return fmt.Errorf("%s: %w", gotext.Get("invalid minreleaseage"), err)
+	}
+
 	grapher := dep.NewGrapher(dbExecutor, aurCache, false, settings.NoConfirm,
-		noDeps, noCheck, cmdArgs.ExistsArg("needed"), run.Logger.Child("grapher"))
+		noDeps, noCheck, cmdArgs.ExistsArg("needed"), minReleaseAge,
+		run.Logger.Child("grapher"))
 
 	graph, err := grapher.GraphFromTargets(ctx, nil, cmdArgs.Targets)
 	if err != nil {
+		return err
+	}
+
+	if err := grapher.ConfirmTooNewPkgs(); err != nil {
 		return err
 	}
 
@@ -67,10 +78,15 @@ func syncInstall(ctx context.Context,
 		}
 
 		upService.AURWarnings.Print()
+		upService.PrintTooNew()
 
 		excluded, errSysUp = upService.UserExcludeUpgrades(graph)
 		if errSysUp != nil {
 			return errSysUp
+		}
+
+		if err := grapher.ConfirmTooNewPkgs(); err != nil {
+			return err
 		}
 	}
 

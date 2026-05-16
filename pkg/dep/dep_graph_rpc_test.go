@@ -98,7 +98,7 @@ func TestGrapher_ReliableParser_AWSCliGit(t *testing.T) {
 	t.Run("parses aws-cli-git with all its dependencies", func(td *testing.T) {
 		td.Parallel()
 
-		g := NewGrapher(mockDB, mockAUR, false, true, false, false, false,
+		g := NewGrapher(mockDB, mockAUR, false, true, false, false, false, 0,
 			text.NewLogger(io.Discard, io.Discard, &os.File{}, true, "test"))
 		got, err := g.GraphFromTargets(context.Background(), nil, []string{"aws-cli-git"})
 		require.NoError(td, err)
@@ -115,7 +115,7 @@ func TestGrapher_ReliableParser_AWSCliGit(t *testing.T) {
 	t.Run("validates provides field for aws-cli", func(td *testing.T) {
 		td.Parallel()
 
-		g := NewGrapher(mockDB, mockAUR, false, true, false, false, false,
+		g := NewGrapher(mockDB, mockAUR, false, true, false, false, false, 0,
 			text.NewLogger(io.Discard, io.Discard, &os.File{}, true, "test"))
 		got, err := g.GraphFromTargets(context.Background(), nil, []string{"aws-cli-git"})
 		require.NoError(td, err)
@@ -192,7 +192,7 @@ func TestGrapher_ReliableSolver_LiriDesktopGit(t *testing.T) {
 	t.Run("liri-desktop-git pulls all dependencies", func(td *testing.T) {
 		td.Parallel()
 
-		g := NewGrapher(mockDB, mockAUR, false, true, false, false, false,
+		g := NewGrapher(mockDB, mockAUR, false, true, false, false, false, 0,
 			text.NewLogger(io.Discard, io.Discard, &os.File{}, true, "test"))
 		got, err := g.GraphFromTargets(context.Background(), nil, []string{"liri-desktop-git"})
 		require.NoError(td, err)
@@ -211,7 +211,7 @@ func TestGrapher_ReliableSolver_LiriDesktopGit(t *testing.T) {
 	t.Run("complex dependency chain resolves in correct order", func(td *testing.T) {
 		td.Parallel()
 
-		g := NewGrapher(mockDB, mockAUR, false, true, false, false, false,
+		g := NewGrapher(mockDB, mockAUR, false, true, false, false, false, 0,
 			text.NewLogger(io.Discard, io.Discard, &os.File{}, true, "test"))
 		got, err := g.GraphFromTargets(context.Background(), nil, []string{"liri-desktop-git"})
 		require.NoError(td, err)
@@ -326,7 +326,7 @@ func TestGrapher_SplitPackages_Clion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			g := NewGrapher(mockDB, mockAUR, false, true, false, false, false,
+			g := NewGrapher(mockDB, mockAUR, false, true, false, false, false, 0,
 				text.NewLogger(io.Discard, io.Discard, &os.File{}, true, "test"))
 			got, err := g.GraphFromTargets(context.Background(), nil, tt.targets)
 			require.NoError(t, err)
@@ -336,7 +336,7 @@ func TestGrapher_SplitPackages_Clion(t *testing.T) {
 	}
 
 	t.Run("packages from same base share AURBase", func(t *testing.T) {
-		g := NewGrapher(mockDB, mockAUR, false, true, false, false, false,
+		g := NewGrapher(mockDB, mockAUR, false, true, false, false, false, 0,
 			text.NewLogger(io.Discard, io.Discard, &os.File{}, true, "test"))
 		got, err := g.GraphFromTargets(context.Background(), nil,
 			[]string{"clion", "clion-jre", "clion-cmake"})
@@ -444,7 +444,7 @@ func TestGrapher_SplitPackages_SamsungUnifiedDriver(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			g := NewGrapher(mockDB, mockAUR, false, true, false, false, false,
+			g := NewGrapher(mockDB, mockAUR, false, true, false, false, false, 0,
 				text.NewLogger(io.Discard, io.Discard, &os.File{}, true, "test"))
 			got, err := g.GraphFromTargets(context.Background(), nil, tt.targets)
 			require.NoError(t, err)
@@ -469,7 +469,7 @@ func TestGrapher_SplitPackages_SamsungUnifiedDriver(t *testing.T) {
 	}
 
 	t.Run("split package internal deps resolved correctly", func(t *testing.T) {
-		g := NewGrapher(mockDB, mockAUR, false, true, false, false, false,
+		g := NewGrapher(mockDB, mockAUR, false, true, false, false, false, 0,
 			text.NewLogger(io.Discard, io.Discard, &os.File{}, true, "test"))
 		got, err := g.GraphFromTargets(context.Background(), nil, []string{"samsung-unified-driver"})
 		require.NoError(t, err)
@@ -614,7 +614,7 @@ func TestGrapher_SplitPackages_NX(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			g := NewGrapher(mockDB, mockAUR, false, true, false, false, false,
+			g := NewGrapher(mockDB, mockAUR, false, true, false, false, false, 0,
 				text.NewLogger(io.Discard, io.Discard, &os.File{}, true, "test"))
 			got, err := g.GraphFromTargets(context.Background(), nil, tt.targets)
 			require.NoError(t, err)
@@ -624,7 +624,7 @@ func TestGrapher_SplitPackages_NX(t *testing.T) {
 	}
 
 	t.Run("split packages share AURBase but can be installed independently", func(t *testing.T) {
-		g := NewGrapher(mockDB, mockAUR, false, true, false, false, false,
+		g := NewGrapher(mockDB, mockAUR, false, true, false, false, false, 0,
 			text.NewLogger(io.Discard, io.Discard, &os.File{}, true, "test"))
 
 		got1, err := g.GraphFromTargets(context.Background(), nil, []string{"nxproxy"})
@@ -691,7 +691,7 @@ func TestGrapher_SplitPackages_ReversedOrder(t *testing.T) {
 	}}
 
 	t.Run("nxproxy nxagent order", func(t *testing.T) {
-		g := NewGrapher(mockDB, mockAUR, false, true, false, false, false,
+		g := NewGrapher(mockDB, mockAUR, false, true, false, false, false, 0,
 			text.NewLogger(io.Discard, io.Discard, &os.File{}, true, "test"))
 		got, err := g.GraphFromTargets(context.Background(), nil, []string{"nxproxy", "nxagent"})
 		require.NoError(t, err)
@@ -702,7 +702,7 @@ func TestGrapher_SplitPackages_ReversedOrder(t *testing.T) {
 	})
 
 	t.Run("nxagent nxproxy reversed order", func(t *testing.T) {
-		g := NewGrapher(mockDB, mockAUR, false, true, false, false, false,
+		g := NewGrapher(mockDB, mockAUR, false, true, false, false, false, 0,
 			text.NewLogger(io.Discard, io.Discard, &os.File{}, true, "test"))
 		got, err := g.GraphFromTargets(context.Background(), nil, []string{"nxagent", "nxproxy"})
 		require.NoError(t, err)
@@ -755,7 +755,7 @@ func TestGrapher_MultipleInstallInfo(t *testing.T) {
 	}}
 
 	t.Run("explicit target takes precedence over dependency", func(t *testing.T) {
-		g := NewGrapher(mockDB, mockAUR, false, true, false, false, false,
+		g := NewGrapher(mockDB, mockAUR, false, true, false, false, false, 0,
 			text.NewLogger(io.Discard, io.Discard, &os.File{}, true, "test"))
 
 		got, err := g.GraphFromTargets(context.Background(), nil,
@@ -824,7 +824,7 @@ func TestGrapher_VersionedDependencies(t *testing.T) {
 	}}
 
 	t.Run("versioned dependency satisfied by higher version", func(t *testing.T) {
-		g := NewGrapher(mockDB, mockAUR, false, true, false, false, false,
+		g := NewGrapher(mockDB, mockAUR, false, true, false, false, false, 0,
 			text.NewLogger(io.Discard, io.Discard, &os.File{}, true, "test"))
 		got, err := g.GraphFromTargets(context.Background(), nil, []string{"versioned-pkg"})
 		require.NoError(t, err)

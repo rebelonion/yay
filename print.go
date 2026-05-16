@@ -134,7 +134,7 @@ func printUpdateList(ctx context.Context, run *runtime.Runtime, cmdArgs *parser.
 
 	targets := mapset.NewThreadUnsafeSet(cmdArgs.Targets...)
 	grapher := dep.NewGrapher(dbExecutor, run.AURClient, false, true,
-		false, false, cmdArgs.ExistsArg("needed"), logger.Child("grapher"))
+		false, false, cmdArgs.ExistsArg("needed"), 0, logger.Child("grapher"))
 
 	upService := upgrade.NewUpgradeService(
 		grapher, run.AURClient, dbExecutor, run.VCSStore,
@@ -146,7 +146,7 @@ func printUpdateList(ctx context.Context, run *runtime.Runtime, cmdArgs *parser.
 		return errSysUp
 	}
 
-	if graph.Len() == 0 {
+	if graph.Len() == 0 && len(upService.TooNewUpgrades.Up) == 0 {
 		return fmt.Errorf("")
 	}
 
@@ -180,6 +180,26 @@ func printUpdateList(ctx context.Context, run *runtime.Runtime, cmdArgs *parser.
 
 		return nil
 	})
+
+	if !nativeFilter {
+		for i := range upService.TooNewUpgrades.Up {
+			up := &upService.TooNewUpgrades.Up[i]
+			if noTargets || targets.Contains(up.Name) {
+				if quietMode {
+					run.Logger.Printf("%s\n", up.Name)
+				} else {
+					run.Logger.Printf("%s %s -> %s %s\n",
+						text.Bold(up.Name),
+						text.Bold(text.Green(up.LocalVersion)),
+						text.Bold(text.Green(up.RemoteVersion)),
+						text.Yellow(gotext.Get("[held back: modified %s ago]", up.Extra)))
+				}
+
+				targets.Remove(up.Name)
+				noUpdates = false
+			}
+		}
+	}
 
 	missing := false
 	targets.Each(func(pkgName string) bool {
